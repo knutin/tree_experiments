@@ -34,7 +34,7 @@ insert(Nodes, [K | Rest], V) ->
     end.
 
 new_children() ->
-    erlang:make_tuple(10, nil).
+    erlang:make_tuple(256, nil).
 
 
 find({_, Children}, Keys) ->
@@ -43,7 +43,7 @@ find({_, Children}, Keys) ->
 find(Children, [K]) ->
     element(1, element(K+1, Children));
 
-find(Children, [K | Rest]) when size(Children) =:= 10 ->
+find(Children, [K | Rest]) ->
     find(element(K+1, Children), Rest);
 
 find(nil, _) ->
@@ -53,41 +53,11 @@ find(nil, _) ->
 
 
 
-%% find(_, []) ->
-%%     not_found;
-
-
-
-%% find({_, Children}, [K]) ->
-%%     element(1, element(K+1, Children));
-%% %% find(Nodes, [K]) ->
-%% %%     error_logger:info_msg("Nodes: ~p, K: ~p~n", [Nodes, K+1]),
-%% %%     element(1, element(K+1, Nodes));
-
-%% find({_, Children}, [K | Rest]) ->
-%%     io:format("recursing, k: ~p, rest: ~p~n", [K, Rest]),
-%%     find(element(K+1, Children), Rest).
-%% %% find(Nodes, [K | Rest]) when size(Nodes) =:= 10 ->
-%% %%     find(element(K+1, Nodes), Rest).
-
-
-
 int2key(I) ->
-    list2key(integer_to_list(I)).
+    bin2key(<<I:64/integer>>).
 
-list2key(L) ->
-    lists:map(fun ($0) -> 0;
-                  ($1) -> 1;
-                  ($2) -> 2;
-                  ($3) -> 3;
-                  ($4) -> 4;
-                  ($5) -> 5;
-                  ($6) -> 6;
-                  ($7) -> 7;
-                  ($8) -> 8;
-                  ($9) -> 9;
-                  (_) -> throw(badarg)
-              end, L).
+bin2key(<<_B0, _B1, B2, B3, B4, B5, B6, B7>>) ->
+    [B2, B3, B4, B5, B6, B7].
 
 %%
 %% TESTS
@@ -107,17 +77,17 @@ insert_test() ->
     ?assertEqual(key3, find(T2, [1])).
 
 
-%% big_insert_test() ->
-%%     Start = 100000000000000,
-%%     N = 100000,
-%%     Keys = lists:map(fun (I) -> int2key(I) end,
-%%                      lists:seq(Start, Start+N)),
+big_insert_test() ->
+    Start = 100000000000000,
+    N = 100000,
+    Keys = lists:map(fun (I) -> int2key(I) end,
+                     lists:seq(Start, Start+N)),
 
-%%     Tree = lists:foldl(fun (K, T) ->
-%%                                insert(T, K, <<255>>)
-%%                        end, new(), Keys),
-%%     error_logger:info_msg("~p keys in ~p mb~n",
-%%                           [N, (erts_debug:flat_size(Tree) * 8) / 1024 / 1024]).
+    Tree = lists:foldl(fun (K, T) ->
+                               insert(T, K, <<255>>)
+                       end, new(), Keys),
+    error_logger:info_msg("~p keys in ~p mb~n",
+                          [N, (erts_debug:flat_size(Tree) * 8) / 1024 / 1024]).
 
 
 get_bench() ->
