@@ -27,6 +27,9 @@ insert({trie, Children}, Keys, V) ->
 insert(nil, [K], V) ->
     setelement(K+1, new_children(), {V, nil});
 
+insert({_, compact, _} = C, [K], V) ->
+    setelement(K+1, unroll(C), {V, nil});
+
 insert(Nodes, [K], V) ->
     case element(K+1, Nodes) of
         {_, Children} ->
@@ -36,18 +39,26 @@ insert(Nodes, [K], V) ->
     end;
 
 insert(nil, Keys, V) ->
-    {V, compact, Keys};
-    %%insert(new_children(), Keys, V);
+    {V, compact, term_to_binary(Keys)};
+%%    insert(new_children(), Keys, V);
+
+insert({_, compact, _} = C, Keys, V) ->
+    insert(unroll(C), Keys, V);
+
 
 insert(Nodes, [K | Rest], V) ->
     case element(K+1, Nodes) of
         {Val, Children} ->
             setelement(K+1, Nodes, {Val, insert(Children, Rest, V)});
         {_, compact, _} = C->
-            setelement(K+1, Nodes, {nil, insert(unroll(C), Rest, V)});
+            setelement(K+1, Nodes, {nil, insert(C, Rest, V)});
         nil ->
-            setelement(K+1, Nodes, insert(nil, Rest, V))
+            setelement(K+1, Nodes, {nil, insert(nil, Rest, V)})
     end.
+
+
+unroll({Val, compact, Keys}) when is_binary(Keys) ->
+    unroll({Val, compact, binary_to_term(Keys)});
 
 unroll({Val, compact, [K]}) ->
     setelement(K+1, new_children(), {Val, nil});
@@ -62,24 +73,28 @@ new_children() ->
 find({_, Children}, Keys) ->
     find(Children, Keys);
 
-find({V, compact, Keys}, Keys) ->
+find({V, compact, _}, _) ->
     V;
 
 find(Children, [K]) ->
-    element(1, element(K+1, Children));
+    case element(K+1, Children) of
+        {Val, compact, [K]} ->
+            Val;
+        {Val, _} ->
+            Val
+    end;
 
 find(Children, [K | Rest]) ->
-    find(element(K+1, Children), Rest);
+    case element(K+1, Children) of
+        {_, {Val, compact, _}} ->
+            Val;
+        C ->
+            find(C, Rest)
+    end;
 
 find(nil, _) ->
     not_found.
 
-
-
-
-
-int2key(I) ->
-    bin2key(<<I:64/integer>>).
 
 
 %% bin2key(<<_B0, _B1, B2, B3, B4, B5, B6, B7>>) ->
@@ -119,8 +134,7 @@ insert_test() ->
     T2 = insert(T1, [1], key3),
     ?assertEqual(key1, find(T2, [1, 1, 1])),
     ?assertEqual(key2, find(T2, [1, 1, 1, 1])),
-    ?assertEqual(key3, find(T2, [1])),
-    T2.
+    ?assertEqual(key3, find(T2, [1])).
 
 
 compact_test() ->
@@ -135,15 +149,28 @@ unroll_test() ->
                   nil, nil, nil, nil, nil}, unroll(C)).
 
 
+nested_test() ->
+    T1 = insert_many(new(), [{6, 6}, {10, 10}, {0, 0}]),
+    T2 = insert(T1, bin2key(?i2b(124204)), 124204),
+    ?assertEqual(124204, find(T2, bin2key(?i2b(124204)))).
+
+
+insert_many(Tree, Pairs) ->
+    lists:foldl(fun ({K, V}, T) ->
+                        insert(T, bin2key(?i2b(K)), V)
+                end, Tree, Pairs).
+
 big_insert_test() ->
     Start = 100000000000000,
-    N = 1000000,
-    Keys = lists:map(fun (I) -> bin2key(?i2b(I)) end,
-                     lists:seq(Start, Start+N, 200)),
+    N = 100000,
+    Keys = lists:map(fun (I) ->
+                             lists:reverse(bin2key(?i2b(I)))
+                     end, lists:seq(Start, Start+N, 1)),
 
     Tree = lists:foldl(fun (K, T) ->
                                insert(T, K, <<255>>)
                        end, new(), Keys),
+%%     error_logger:info_msg("~p~n", [Tree]),
     error_logger:info_msg("~p keys in ~p mb~n",
                           [N, (erts_debug:flat_size(Tree) * 8) / 1024 / 1024]).
 
@@ -156,8 +183,8 @@ from_file(File) ->
     Tree = lists:foldl(fun (K, T) ->
                                insert(T, K, <<255>>)
                        end, new(), Keys),
+%%     error_logger:info_msg("~p~n", [Tree]),
     io:format("size: ~p mb~n", [erts_debug:flat_size(Tree) * 8 / 1024 / 1024]),
-
     time_reads(Tree, ReadKeys).
 
 time_reads(Tree, ReadKeys) ->
@@ -169,7 +196,7 @@ time_reads(Tree, ReadKeys) ->
                         multi_search(Tree, ReadKeys),
                         io:format("Time: ~p us~n",
                                   [timer:now_diff(now(), StartTime)])
-                end, lists:seq(1, 15))
+                end, lists:seq(1, 20))
       end).
 
 
@@ -178,9 +205,9 @@ get_bench() ->
     N = 100000,
     Spread = 50,
     Keys = lists:map(fun (I) -> bin2key(?i2b(I)) end,
-                     lists:seq(Start, Start+N, Spread)),
+                     lists:seq(Start, Start+(N*Spread), Spread)),
     ReadKeys = lists:map(fun (I) -> bin2key(?i2b(I)) end,
-                         lists:seq(Start, Start+1000, Spread)),
+                         lists:seq(Start, Start+(1000*Spread), Spread)),
 
     Tree = lists:foldl(fun (K, T) ->
                                insert(T, K, K)
@@ -202,17 +229,17 @@ keys() ->
     ?SIZED(Size, list(choose(0, Size))).
 
 prop_insert_0() ->
-    ?FORALL({K, Xs}, {choose(0, 100000000), keys()},
+    ?FORALL({K, Xs}, {choose(0, 1000000), keys()},
             begin
-                %%io:format("insert key: ~w, keys: ~w~n", [K, Xs]),
-                Tree = lists:foldl(fun (I, T) -> insert(T, int2key(I), I) end,
+                Tree = lists:foldl(fun (I, T) ->
+                                           insert(T, bin2key(?i2b(I)), I)
+                                   end,
                                    new(), Xs),
-                %%io:format("tree: ~p~n", [Tree]),
-                K =:= find(insert(Tree, int2key(K), K), int2key(K))
+                K =:= find(insert(Tree, bin2key(?i2b(K)), K), bin2key(?i2b(K)))
             end).
 
 prop_insert_1() ->
     ?FORALL(K, choose(1, 100000000),
             begin
-                K =:= find(insert(new(), int2key(K), K), int2key(K))
+                K =:= find(insert(new(), bin2key(?i2b(K)), K), bin2key(?i2b(K)))
             end).
