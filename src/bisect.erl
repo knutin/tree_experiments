@@ -5,6 +5,7 @@
 
 -define(i2k(I), <<I:64/integer>>).
 -define(i2v(I), <<I:8/integer>>).
+-define(b2i(B), list_to_integer(binary_to_list(B))).
 
 
 
@@ -122,6 +123,16 @@ size_test() ->
     error_logger:info_msg("~p keys in ~p mb~n",
                           [N, byte_size(B) / 1024 / 1024]).
 
+
+from_file(File) ->
+    {ok, Terms} = file:read_file(File),
+    KeyPairs = lists:map(fun (K) -> {?b2i(K), 255} end,
+                         binary_to_term(Terms)),
+    {ReadKeys, _} = lists:unzip(lists:sublist(KeyPairs, 1000)),
+
+    B = from_orddict(lists:sort(KeyPairs)),
+    io:format("size: ~p mb~n", [byte_size(B) / 1024 / 1024]),
+    time_reads(B, length(KeyPairs), ReadKeys).
 
 speed_test() ->
     Start = 100000000000000,
