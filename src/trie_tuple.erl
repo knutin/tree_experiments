@@ -56,8 +56,16 @@ find(nil, _) ->
 int2key(I) ->
     bin2key(<<I:64/integer>>).
 
+
 bin2key(<<_B0, _B1, B2, B3, B4, B5, B6, B7>>) ->
-    [B2, B3, B4, B5, B6, B7].
+    [B2, B3, B4, B5, B6, B7];
+
+bin2key(<<>>) ->
+    [];
+bin2key(<<Byte, B/binary>>) ->
+    [Byte | bin2key(B)].
+
+
 
 %%
 %% TESTS
@@ -79,9 +87,9 @@ insert_test() ->
 
 big_insert_test() ->
     Start = 100000000000000,
-    N = 100000,
+    N = 1000000,
     Keys = lists:map(fun (I) -> int2key(I) end,
-                     lists:seq(Start, Start+N)),
+                     lists:seq(Start, Start+N, 200)),
 
     Tree = lists:foldl(fun (K, T) ->
                                insert(T, K, <<255>>)
@@ -89,27 +97,46 @@ big_insert_test() ->
     error_logger:info_msg("~p keys in ~p mb~n",
                           [N, (erts_debug:flat_size(Tree) * 8) / 1024 / 1024]).
 
-
-get_bench() ->
-    Start = 100000000000000,
-    N = 1000000,
-    Keys = lists:map(fun (I) -> int2key(I) end,
-                     lists:seq(Start, Start+N)),
-    ReadKeys = lists:map(fun int2key/1,
-                         lists:seq(Start, Start+1000)),
+from_file(File) ->
+    {ok, B} = file:read_file(File),
+    Keys = lists:map(fun (K) -> int2key(list_to_integer(binary_to_list(K))) end,
+                     binary_to_term(B)),
+    ReadKeys = lists:sublist(Keys, 1000),
 
     Tree = lists:foldl(fun (K, T) ->
-                               insert(T, K, K)
+                               insert(T, K, <<255>>)
                        end, new(), Keys),
+    io:format("size: ~p mb~n", [erts_debug:flat_size(Tree) * 8 / 1024 / 1024]),
+
+    time_reads(Tree, ReadKeys).
+
+time_reads(Tree, ReadKeys) ->
     spawn(
       fun() ->
               lists:foreach(
                 fun (_) ->
                         StartTime = now(),
                         multi_search(Tree, ReadKeys),
-                        io:format("Time: ~p us~n", [timer:now_diff(now(), StartTime)])
-                end, lists:seq(1, 25))
+                        io:format("Time: ~p us~n",
+                                  [timer:now_diff(now(), StartTime)])
+                end, lists:seq(1, 15))
       end).
+
+
+get_bench() ->
+    Start = 100000000000000,
+    N = 100000,
+    Spread = 50,
+    Keys = lists:map(fun (I) -> int2key(I) end,
+                     lists:seq(Start, Start+N, Spread)),
+    ReadKeys = lists:map(fun int2key/1,
+                         lists:seq(Start, Start+1000, Spread)),
+
+    Tree = lists:foldl(fun (K, T) ->
+                               insert(T, K, K)
+                       end, new(), Keys),
+
+    time_reads(Tree, ReadKeys).
 
 multi_search(T, Keys) ->
     lists:map(fun (K) ->
