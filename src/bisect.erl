@@ -37,7 +37,7 @@ index(B, Low, High, K) ->
         true ->
             <<_:MidIndex/binary, MidKey:8/binary, _/binary>> = B,
 
-            if 
+            if
                 MidKey > K ->
                     index(B, Low, Mid - 1, K);
                 MidKey < K ->
@@ -48,7 +48,7 @@ index(B, Low, High, K) ->
         false ->
             Mid
     end.
-    
+
 
 
 insert(<<>>, K, V) ->
@@ -64,7 +64,7 @@ insert(B, K, V) ->
         <<Left:Index/binary, Right:RightIndex/binary>> ->
             <<Left/binary, K/binary, V/binary, Right/binary>>
     end.
-     
+
 
 find(B, K) ->
     Index = (index(B, K) * 9) - 9,
@@ -108,7 +108,7 @@ find_many_test() ->
     find_many(B, [<<1:64/integer>>, <<2:64/integer>>, <<3:64/integer>>]).
 
 
-    
+
 
 
 size_test() ->
@@ -171,7 +171,7 @@ time_reads(B, Size, ReadKeys) ->
       end),
     receive done -> ok after 1000 -> ok end.
 
-            
+
 
 
 insert_many(Bin, Pairs) ->
@@ -185,4 +185,3 @@ find_many(B, Keys) ->
     lists:map(fun (K) ->
                       {K, find(B, K)}
               end, Keys).
-
