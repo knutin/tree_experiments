@@ -158,12 +158,15 @@ time_reads(B, Size, ReadKeys) ->
                             find_many(B, ReadKeys),
                             timer:now_diff(now(), StartTime)
                     end, lists:seq(1, 20)),
+
+              Rps = 1000000 / ((lists:sum(Timings) / length(Timings)) / 1000),
               error_logger:info_msg("20 runs, ~p keys, "
                                     "average: ~p us, "
-                                    "max: ~p us~n",
+                                    "max: ~p us, rps ~.2f~n",
                                     [Size,
                                      lists:sum(Timings) / length(Timings),
-                                     lists:max(Timings)]),
+                                     lists:max(Timings), Rps]),
+
               Parent ! done
       end),
     receive done -> ok after 1000 -> ok end.
